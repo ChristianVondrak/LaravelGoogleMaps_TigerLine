@@ -40,8 +40,8 @@ Este repositorio contiene una aplicación **Laravel 11** que permite buscar y re
 ## 1. Clonar y configurar el proyecto
 
 ```bash
-git clone https://github.com/tu-usuario/tu-repo.git
-cd tu-repo
+git clone https://github.com/ChristianVondrak/LaravelGoogleMaps_TigerLine.git
+cd LaravelGoogleMaps_TigerLine
 cp .env.example .env
 ```
 
@@ -59,8 +59,6 @@ DB_DATABASE=laravel
 DB_USERNAME=laravel
 DB_PASSWORD=secret
 ```
-
-> **Nota:** Si cambias el mapeo de puertos en `docker-compose.yml` (por ejemplo a `3307:3306`), actualiza `DB_PORT` en tu `.env` también.
 
 ---
 
@@ -126,39 +124,3 @@ http://localhost:8080
 
 ---
 
-## 6. Comandos útiles
-
-- **Ver logs de Laravel**  
-  ```bash
-  docker-compose logs -f app
-  ```
-- **Ejecutar tinker**  
-  ```bash
-  docker-compose exec app php artisan tinker
-  ```
-- **Ejecutar pruebas**  
-  ```bash
-  docker-compose exec app php artisan test
-  ```
-- **Reconstruir solo la app**  
-  ```bash
-  docker-compose build app
-  ```
-
----
-
-## 7. Limpieza
-
-- Parar y eliminar contenedores & volúmenes:
-
-  ```bash
-  docker-compose down -v
-  ```
-
-- Borrar la imagen:
-
-  ```bash
-  docker image rm laravel-app
-  ```
-
-¡Listo! Con estos pasos tu aplicación Laravel quedará completamente dockerizada y lista para desplegar con un solo comando.
