@@ -2,14 +2,15 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Location;
 use Illuminate\Http\Request;
+use App\Models\Zipcode;
+use App\Models\Place;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 class LocationController extends Controller
 {
     /**
-     * Devuelve la vista con el mapa y el buscador.
+     * Muestra la vista del mapa y buscador.
      */
     public function map()
     {
@@ -17,73 +18,82 @@ class LocationController extends Controller
     }
 
     /**
-     * Busca por geoid (ZIP) o por nombre (LIKE) y devuelve
-     * boundary y centroid de un solo registro en JSON.
+     * Endpoint GET /search?term=...
      */
     public function search(Request $request)
     {
-        $q = trim($request->get('q', ''));
+        $searchTerm = trim($request->get('term', ''));
 
-        if ($q === '') {
-            return response()->json(['error' => 'Introduce un término de búsqueda.'], 422);
+        if ($searchTerm === '') {
+            return response()->json([
+                'error' => 'Introduce un término de búsqueda.'
+            ], 422);
         }
 
-        $query = Location::query();
-
-        if (ctype_digit($q)) {
-            // ZIP codes numéricos
-            $query->where('geoid', $q);
+        // Elige modelo y condición
+        if (ctype_digit($searchTerm)) {
+            $modelClass = Zipcode::class;
+            $query      = $modelClass::selectRaw(implode(',', [
+                'geoid',
+                'name',
+                'ST_AsGeoJSON(boundary) AS boundary_geojson',
+                'ST_AsGeoJSON(centroid) AS centroid_geojson',
+            ]))
+            ->where('geoid', (int)$searchTerm);
         } else {
-            // Búsqueda de texto en el nombre
-            $query->where('name', 'LIKE', "%{$q}%");
+            $modelClass = Place::class;
+            $query      = $modelClass::selectRaw(implode(',', [
+                'geoid',
+                'name',
+                'ST_AsGeoJSON(boundary) AS boundary_geojson',
+                'ST_AsGeoJSON(centroid) AS centroid_geojson',
+            ]))
+            ->where('name', 'LIKE', "%{$searchTerm}%");
         }
 
-        try {
-            $loc = $query->firstOrFail();
-        } catch (ModelNotFoundException $e) {
-            return response()->json(['error' => "No se encontró «{$q}»."] , 404);
+        $record = $query->first();
+
+        if (! $record) {
+            return response()->json([
+                'error' => "No se encontró «{$searchTerm}».",
+            ], 404);
         }
 
-        // Extraemos sólo el "coordinates" del GeoJSON
-        $geo = $loc->boundary_geo_json; 
-        $coords = $geo['coordinates'] ?? [];
+        $boundaryCoords = json_decode($record->boundary_geojson, true)['coordinates'] ?? [];
+        $centroidCoords = json_decode($record->centroid_geojson, true)['coordinates'] ?? [];
 
         return response()->json([
-            'geoid'    => $loc->geoid,
-            'name'     => $loc->name,
-            'boundary' => $coords,
-            'centroid' => [
-                $loc->centroid->getLng(),
-                $loc->centroid->getLat(),
-            ],
+            'geoid'    => $record->geoid,
+            'name'     => $record->name,
+            'boundary' => $boundaryCoords,
+            'centroid' => $centroidCoords,
         ]);
     }
 
-     /**
-     * Devuelve hasta 5 sugerencias (name o geoid) para autocompletar.
+    /**
+     * Endpoint GET /autocomplete?term=...
      */
     public function autocomplete(Request $request)
     {
-        $q = trim($request->get('q', ''));
-        if ($q === '') {
+        $searchTerm = trim($request->get('term', ''));
+        if ($searchTerm === '') {
             return response()->json([]);
         }
 
-        $query = Location::query();
-        if (ctype_digit($q)) {
-            $query->where('geoid', 'like', "{$q}%");
+        if (ctype_digit($searchTerm)) {
+            $results = Zipcode::where('geoid', 'like', "{$searchTerm}%")
+                ->limit(5)
+                ->get(['geoid', 'name']);
         } else {
-            $query->where('name', 'LIKE', "%{$q}%");
+            $results = Place::where('name', 'LIKE', "%{$searchTerm}%")
+                ->limit(5)
+                ->get(['geoid', 'name']);
         }
 
-        $results = $query
-            ->limit(5)
-            ->get(['geoid','name'])
-            ->map(fn($loc) => [
-                // Si hay nombre, sugerimos nombre; si no, sugerimos ZIP
-                'value' => $loc->name ?: $loc->geoid,
-            ]);
+        $suggestions = $results->map(function ($item) {
+            return ['value' => $item->name ?: (string)$item->geoid];
+        });
 
-        return response()->json($results);
+        return response()->json($suggestions);
     }
 }
