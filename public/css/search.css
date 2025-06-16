@@ -1,0 +1,126 @@
+/* Reset básico y variables */
+html, body, #app {
+    height: 100%;
+    margin: 0;
+    font-family: 'Roboto', sans-serif;
+  }
+  #map { width: 100%; height: 100vh; }
+  
+  /* Contenedor de búsqueda */
+  .search-container {
+    position: absolute;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(90%, 400px);
+    background: #fff;
+    border-radius: 0.25rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    z-index: 1000;
+  }
+  
+  /* Barra de búsqueda */
+  .search-bar {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem;
+  }
+  .search-bar input {
+    flex: 1;
+    padding: 0.5rem;
+    font-size: 1rem;
+    border: 1px solid #ccc;
+    border-radius: 0.25rem;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .search-bar input:focus {
+    outline: none;
+    border-color: #4285F4;
+    box-shadow: 0 0 0 3px rgba(66,133,244,0.2);
+  }
+  
+  .search-bar button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #4285F4;
+    border: none;
+    border-radius: 0.25rem;
+    padding: 0 1rem;
+    color: #fff;
+    cursor: pointer;
+    transition: background .2s;
+  }
+  .search-bar button:disabled {
+    background: #a0c6ff;
+    cursor: not-allowed;
+  }
+  .search-bar button:not(:disabled):hover {
+    background: #3367d6;
+  }
+  
+  /* Loader circular */
+  .loader {
+    width: 1.25rem;
+    height: 1.25rem;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #4285F4;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    display: none;
+    margin-left: 0.5rem;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  
+  /* Mensajes de error */
+  .error {
+    color: #d93025;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+  }
+  
+  /* Lista de sugerencias */
+  .autocomplete-list {
+    max-height: 200px;
+    overflow-y: auto;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .autocomplete-item {
+    display: flex;
+    align-items: center;
+    padding: 0.5rem;
+    cursor: pointer;
+    transition: background .2s;
+  }
+  .autocomplete-item:hover,
+  .autocomplete-item[aria-selected="true"] {
+    background: #f1f1f1;
+  }
+  .autocomplete-item .material-icons {
+    margin-right: 0.5rem;
+  }
+  
+  /* Ocultar actividad visual */
+  .visually-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0,0,0,0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+  }
+  
+  .error:empty {
+    display: none;
+  }
+  
+  /* 2) sólo mostrarlo cuando haya texto */
+  .error:not(:empty) {
+    display: block; /* o inline-block si lo prefieres */
+  }
+

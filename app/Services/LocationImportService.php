@@ -1,4 +1,6 @@
 <?php
+// app/Services/LocationImportService.php
+
 declare(strict_types=1);
 
 namespace App\Services;
@@ -14,86 +16,105 @@ class LocationImportService
 
     /**
      * Importa GeoJSON en batches, haciendo upsert para no duplicar.
+     *
+     * @param  string      $path       Ruta al fichero GeoJSON
+     * @param  string      $table      'zipcodes' o 'places'
+     * @param  string      $type       'zipcode' o 'place'
+     * @param  int|null    $batchSize  Número de filas por batch (null = valor por defecto)
      */
-    public function import(string $path, int $batchSize = 500): int
+    public function import(string $path, string $table, string $type, ?int $batchSize = null): int
     {
         if (! file_exists($path)) {
             throw new \RuntimeException("Fichero no encontrado: {$path}");
         }
 
-        DB::connection()->disableQueryLog();
-        $iterator = Items::fromFile($path, ['pointer' => '/features']);
+        // Batch por defecto
+        $batchSize = $batchSize
+            ?? ($type === 'zipcode' ? 50 : 500);
 
-        $batch = [];
-        $total = 0;
+        ini_set('memory_limit', '-1');
+        set_time_limit(0);
+        DB::connection()->disableQueryLog();
+
+        $iterator = Items::fromFile($path, ['pointer' => '/features']);
+        $batch    = [];
+        $total    = 0;
 
         foreach ($iterator as $feature) {
-            if (! isset($feature->properties, $feature->geometry)) {
+            $props    = $feature->properties ?? null;
+            $geometry = $feature->geometry   ?? null;
+            if (! $props || ! $geometry) {
                 continue;
             }
 
-            $props = $feature->properties;
-            $geoid = $props->GEOID ?? ($props->ZCTA5CE20 ?? null);
+            // GEOID
+            $geoid = match ($type) {
+                'zipcode' => $props->ZCTA5CE20 ?? ($props->GEOID20 ?? null),
+                'place'   => $props->GEOID   ?? null,
+                default   => null,
+            };
             if (! $geoid) {
                 continue;
             }
 
-            $geomJson = addslashes(json_encode($feature->geometry));
-            [$lng, $lat] = $this->calculateBoundingBoxCenter($feature->geometry);
+            $name     = $props->NAME ?? null;
+            $geomJson = addslashes(json_encode($geometry));
+
+            // Centroide: si es zipcode y vienen INTPTLAT20/INTPTLON20, úsalos
+            if ($type === 'zipcode' && isset($props->INTPTLAT20, $props->INTPTLON20)) {
+                $lat = (float) $props->INTPTLAT20;
+                $lng = (float) $props->INTPTLON20;
+            } else {
+                // fallback a bounding-box center
+                [$lng, $lat] = $this->calculateBoundingBoxCenter($geometry);
+            }
 
             $batch[] = [
-                'geoid'    => $geoid,
-                'name'     => $props->NAME ?? null,
-
-                // boundary: GeoJSON → Geometry → WKT → Geometry con SRID 4326
-                'boundary' => DB::raw(<<<SQL
-                    ST_GeomFromText(
-                      ST_AsText(
-                        ST_GeomFromGeoJSON('{$geomJson}')
-                      ),
-                      4326
-                    )
-                SQL
-                ),
-
-                // centroid: WKT POINT(lat lon) con SRID 4326
-                'centroid' => DB::raw(sprintf(
+                'geoid'      => (int) $geoid,
+                'name'       => $name,
+                'boundary'   => DB::raw("ST_GeomFromGeoJSON('{$geomJson}')"),
+                // **lat lon** (MySQL espera Y X para SRID=4326)
+                'centroid'   => DB::raw(sprintf(
                     "ST_GeomFromText('POINT(%F %F)', 4326)",
                     $lat,
                     $lng
                 )),
-
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
 
             if (count($batch) >= $batchSize) {
-                $this->flushBatch($batch, $total);
+                $total += $this->flushBatch($batch, $table);
                 $batch = [];
             }
         }
 
         if (! empty($batch)) {
-            $this->flushBatch($batch, $total, true);
+            $total += $this->flushBatch($batch, $table, true);
         }
 
         return $total;
     }
 
-    protected function flushBatch(array $batch, int &$total, bool $isFinal = false): void
+    protected function flushBatch(array $batch, string $table, bool $isFinal = false): int
     {
         try {
-            DB::table('locations')->upsert(
-                $batch,
-                ['geoid'],
-                ['name', 'boundary', 'centroid', 'updated_at']
-            );
-            $total += count($batch);
+            DB::table($table)
+              ->upsert(
+                  $batch,
+                  ['geoid'],
+                  ['name', 'boundary', 'centroid', 'updated_at']
+              );
+
+            $count = count($batch);
             $this->logger->info(sprintf(
-                '%s batch de %d features procesado.',
+                '%s batch de %d filas en "%s".',
                 $isFinal ? 'Final' : 'Intermedio',
-                count($batch)
+                $count,
+                $table
             ));
+
+            return $count;
         } catch (QueryException $e) {
             $msg = $e->errorInfo[2] ?? $e->getMessage();
             throw new \RuntimeException(
@@ -123,9 +144,6 @@ class LocationImportService
             }
         }
 
-        return [
-            ($minLng + $maxLng) / 2,
-            ($minLat + $maxLat) / 2,
-        ];
+        return [($minLng + $maxLng) / 2, ($minLat + $maxLat) / 2];
     }
 }
